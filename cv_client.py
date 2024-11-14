@@ -8,14 +8,16 @@ import aiohttp
 import warnings
 warnings.simplefilter("ignore", UserWarning)
 
-import requests
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
 from torchvision import transforms
 
-SER_SERVER_URL = 'http://127.0.0.1:8000'
+from handler import Handler
+from eye import RoboEyes
+
+SER_SERVER_URL = 'http://127.0.0.1:8080'
 
 class RateLimiter:
     def __init__(self, interval_seconds):
@@ -282,7 +284,12 @@ async def get_ser_prediction(session, rate_limiter):
         return None, None
 
 async def main():
-    # Initialize rate limiter for 1 request every 15 seconds
+    # Initialize rate limiter for 1 request every 3 seconds
+    robo_eyes = RoboEyes()
+    robo_eyes.start()
+
+    handler = Handler()
+
     rate_limiter = RateLimiter(interval_seconds=3)
     
     mp_face_mesh = mp.solutions.face_mesh
@@ -302,7 +309,7 @@ async def main():
     DICT_EMO = {0: 'Neutral', 1: 'Happiness', 2: 'Sadness', 3: 'Surprise', 4: 'Fear', 5: 'Disgust', 6: 'Anger'}
 
     async with aiohttp.ClientSession() as session:
-        cap = cv2.VideoCapture(1)
+        cap = cv2.VideoCapture(0)
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = np.round(cap.get(cv2.CAP_PROP_FPS))
@@ -361,6 +368,10 @@ async def main():
                             wait_text = f"Next prediction in: {wait_time:.1f}s"
                             cv2.putText(frame, wait_text, (10, y_position), cv2.FONT_HERSHEY_SIMPLEX,
                                       1, (255, 165, 0), 2, cv2.LINE_AA)
+                        
+                        if last_ser_prediction['prediction']['name'] != "temp":
+                            handler = Handler(last_ser_prediction, output[0][cl], robo_eyes)
+                            handler.handle_robot_behavior()
 
                 t2 = time.time()
                 frame = display_FPS(frame, 'FPS: {0:.1f}'.format(1 / (t2 - t1)), box_scale=.5)

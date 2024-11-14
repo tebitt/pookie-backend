@@ -3,6 +3,7 @@ import numpy as np
 import time
 import random
 import math
+import threading
 
 # Define constants
 BGCOLOR = (0, 0, 0)        # Background color (black)
@@ -230,26 +231,17 @@ class RoboEyes:
         # Show the frame
         cv2.imshow(self.window_name, frame)
 
-    def run(self):
+    def run_thread(self):
+        # Threaded method to continuously update the eyes
         while True:
-            self.update()
-
-            # Handle keypresses
-            key = cv2.waitKey(int(self.frameInterval * 1000)) & 0xFF
-            if key == ord('q'):  # Quit the program
+            if cv2.waitKey(1) & 0xFF == ord('q'):  # Press 'q' to exit
                 break
-            elif key == ord('i'):  # Toggle idle mode
-                self.idle = not self.idle
-            elif key == ord('h'):  # Activate happiness mode
-                self.happiness_mode = True
-                self.happiness_start_time = time.time()  # Start the happiness timer
-            elif key == ord('s'):
-                self.sadness_mode = True
-                self.sadness_start_time = time.time()
-
+            self.update()  # Call update method with parentheses
+            
         cv2.destroyAllWindows()
 
-# Usage
-if __name__ == "__main__":
-    robot_eyes = RoboEyes()
-    robot_eyes.run()
+
+    def start(self):
+        # Create and start the eye display thread
+        threading.Thread(target=self.run_thread, daemon=True).start()
+
