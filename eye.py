@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from PIL import Image, ImageSequence
-import pyautogui  # Use this to dynamically get the screen size
+import pyautogui
 
 class RoboEyes:
     def __init__(self, gif_paths=[], screen_size=None):
@@ -12,8 +12,9 @@ class RoboEyes:
         self.window_name = "RoboEyes"
         self.gif_paths = gif_paths
         self.gif_frames = []
+        self.current_gif_index = None  # Track the currently playing GIF index
         self.load_gifs()
-        cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)  
+        cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
 
     def load_gifs(self):
         for path in self.gif_paths:
@@ -31,33 +32,37 @@ class RoboEyes:
         delay_between_frames = int(1000 / fps)  # Calculate delay in milliseconds
         while True:
             cv2.imshow(self.window_name, self.canvas)  # Show black canvas initially
-            
+
             key = cv2.waitKey(100)  # Wait for key press every 100ms
-            
+
             if key == ord('1'):
-                self.show_gif(0, delay_between_frames)  # Show first GIF
-            elif key == ord('2'):
-                self.show_gif(1, delay_between_frames)  # Show second GIF
-            elif key == ord('3'):
-                self.show_gif(2, delay_between_frames)  # Show third GIF
-            elif key == ord('q'):  # 'q' for quit
+                self.current_gif_index = 0  # Switch to first GIF
+            if key == ord('2'):
+                self.current_gif_index = 1  # Switch to second GIF
+            if key == ord('3'):
+                self.current_gif_index = 2  # Switch to third GIF
+            if key == ord('q'):  # 'q' for quit
                 break
-        
+
+            if self.current_gif_index is not None:
+                self.show_gif(self.current_gif_index, delay_between_frames)
+
         cv2.destroyAllWindows()
 
     def show_gif(self, gif_index, delay):
         if gif_index < len(self.gif_frames):
             gif = self.gif_frames[gif_index]
-            
-            for frame in gif:  
+            for frame in gif:
                 self.show_frame(frame)
-                cv2.waitKey(delay)
+                # Check if a key has been pressed during the GIF display
+                if cv2.waitKey(delay) in [ord('1'), ord('2'), ord('3'), ord('q')]:
+                    break  # Stop the current GIF and break to check for new input
         else:
             print(f"No GIF available for index {gif_index}")
 
 # examples
-gif_paths = ["assets/pookie_neutral_1.gif", "assets/pookie_neutral_2.gif", "assets/pookie_angry_1.gif"]
+gif_paths = ["assets/pookie_neutral_1.gif", "assets/pookie_angry_1.gif", "assets/pookie_angry_2.gif"]
 
 robo_eyes = RoboEyes(gif_paths=gif_paths)
 
-robo_eyes.run(fps=4)
+robo_eyes.run(fps=2)
