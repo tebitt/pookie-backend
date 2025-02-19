@@ -31,17 +31,17 @@ class RoboEyes:
     def run(self, fps=1):
         delay_between_frames = int(1000 / fps)  # Calculate delay in milliseconds
         while True:
-            cv2.imshow(self.window_name, self.canvas)  # Show black canvas initially
+            cv2.imshow(self.window_name, self.canvas)
 
-            key = cv2.waitKey(100)  # Wait for key press every 100ms
+            key = cv2.waitKey(100)  
 
             if key == ord('1'):
-                self.current_gif_index = 0  # Switch to first GIF
+                self.current_gif_index = 0  
             if key == ord('2'):
-                self.current_gif_index = 1  # Switch to second GIF
+                self.current_gif_index = 1  
             if key == ord('3'):
-                self.current_gif_index = 2  # Switch to third GIF
-            if key == ord('q'):  # 'q' for quit
+                self.current_gif_index = 2  
+            if key == ord('q'):  
                 break
 
             if self.current_gif_index is not None:
