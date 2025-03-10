@@ -13,11 +13,25 @@ import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
 from torchvision import transforms
-
 from handler import Handler
 from rate_limiter import RateLimiter
+import os, glob
 
+FER_DICT_EMO = {"neutral": 0, "anger": 1, "happiness": 2, "sadness": 3, "disgust": 4, "fear": 5, "surprise": 6}
+SER_DICT_EMO = {"neutral": 0, "anger": 1, "happiness": 2, "sadness": 3, "disgust": 4}
+EMOTION_TABLE = {"neutral": "", "anger": "", "happiness": "", "sadness": "", "disgust": "", "fear": "", "surprise": ""}
+BAYE_EMOTION = {"neutral": 0, "anger": 0, "happiness": 0, "sadness": 0, "disgust": 0, "fear": 0, "surprise": 0}
 
+NODE_DIR = os.path.dirname(os.path.abspath(__file__)) + "/bn"
+
+csv_list = glob.glob(NODE_DIR + "/*.csv")
+
+for csv in csv_list:
+    with open(csv, 'r') as f:
+        table = [line.split(',') for line in f]
+        table = tuple([tuple(float(x.strip()) for x in line) for line in table])
+
+        EMOTION_TABLE[csv[31:-4]] = table
 
 SER_SERVER_URL = 'http://127.0.0.1:8080'
 
@@ -291,7 +305,8 @@ async def main():
     pth_LSTM_model.load_state_dict(torch.load('models/FER_dinamic_LSTM_{0}.pt'.format(name_LSTM_model)))
     pth_LSTM_model.eval()
 
-    DICT_EMO = {0: 'Neutral', 1: 'Happiness', 2: 'Sadness', 3: 'Surprise', 4: 'Fear', 5: 'Disgust', 6: 'Anger'}
+    FER_LABELS = ["neutral", "happiness", "sadness", "surprise", "fear", "disgust", "anger"]
+    DICT_EMO = {0: FER_LABELS[0], 1: FER_LABELS[1], 2: FER_LABELS[2], 3: FER_LABELS[3], 4: FER_LABELS[4], 5: FER_LABELS[5], 6: FER_LABELS[6]}
 
     async with aiohttp.ClientSession() as session:
         cap = cv2.VideoCapture(1)
@@ -354,9 +369,13 @@ async def main():
                                       1, (255, 165, 0), 2, cv2.LINE_AA)
                         
                         if last_ser_prediction['prediction']['name'] != "temp" and await handler_rate_limiter.acquire():
-                            handler = Handler(last_ser_prediction, output)
+                            fer_values = output[0]
+                            inferred_fer_label = FER_LABELS[max(range(len(fer_values)), key=lambda i: fer_values[i])]
+                            inferred_ser_label = max(last_ser_prediction['prediction']['prob'], key=lambda k: float(last_ser_prediction['prediction']['prob'][k]))
+                            for emotion in EMOTION_TABLE:
+                                BAYE_EMOTION[emotion] = EMOTION_TABLE[emotion][FER_DICT_EMO[inferred_fer_label]][SER_DICT_EMO[inferred_ser_label]]
+                            handler = Handler(BAYE_EMOTION)
                             handler.handle_robot_behavior()
-
 
                 t2 = time.time()
                 frame = display_FPS(frame, 'FPS: {0:.1f}'.format(1 / (t2 - t1)), box_scale=.5)
@@ -372,4 +391,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
