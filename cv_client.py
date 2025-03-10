@@ -30,8 +30,7 @@ for csv in csv_list:
     with open(csv, 'r') as f:
         table = [line.split(',') for line in f]
         table = tuple([tuple(float(x.strip()) for x in line) for line in table])
-
-        EMOTION_TABLE[csv[31:-4]] = table
+        EMOTION_TABLE[csv[len(NODE_DIR) + 1:-4]] = table
 
 SER_SERVER_URL = 'http://127.0.0.1:8080'
 

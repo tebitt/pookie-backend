@@ -2,6 +2,8 @@ import cv2
 import numpy as np
 from PIL import Image, ImageSequence
 import pyautogui
+import os
+
 
 class RoboEyes:
     def __init__(self, gif_paths=[], screen_size=None):
