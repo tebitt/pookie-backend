@@ -8,130 +8,50 @@ import pygame
 import cv2
 
 class Handler:
-    def __init__(self, ser_result=None, fer_result=None):
-        self.ser_neutral = 0.0
-        self.ser_happiness = 0.0
-        self.ser_anger = 0.0
-        self.ser_sadness = 0.0
-        self.ser_frustration = 0.0
-        self.ser_surprise = 0.0 #calc
-        self.ser_fear = 0.0 #calc
-        self.ser_disgust = 0.0 #calc
+    def __init__(self, baye_result=None):
+        self.baye_result = baye_result
+        self.anger = 0.0
+        self.disgust = 0.0
+        self.fear = 0.0
+        self.happiness = 0.0
+        self.neutral = 0.0
+        self.sadness = 0.0
+        self.surprise = 0.0
 
-        self.fer_neutral = 0.0
-        self.fer_happiness = 0.0
-        self.fer_anger = 0.0
-        self.fer_sadness = 0.0
-        self.fer_frustration = 0.0 #calc
-        self.fer_surprise = 0.0
-        self.fer_fear = 0.0
-        self.fer_disgust = 0.0
+        if baye_result is not None:
+            self.set_emotions(baye_result)
 
-        if ser_result:
-            self.set_ser_emotions(ser_result)
-
-        if fer_result is not None and fer_result.size != 0:
-            self.set_fer_emotions(fer_result)
-
-
-    def set_ser_emotions(self, ser_result):
-        """
-        Parses the SER result and sets individual emotion probabilities.
-        """
-        self.ser_neutral = float(ser_result['prediction']['prob'].get("neutral", 0.0))
-        self.ser_anger = float(ser_result['prediction']['prob'].get("anger", 0.0))
-        self.ser_happiness = float(ser_result['prediction']['prob'].get("happiness", 0.0))
-        self.ser_sadness = float(ser_result['prediction']['prob'].get("sadness", 0.0))
-        self.ser_frustration = float(ser_result['prediction']['prob'].get("frustration", 0.0))
-        self.ser_surprise = float(sum([self.ser_happiness, self.ser_sadness, self.fer_neutral])/3)
-        self.ser_fear = float(sum([self.ser_sadness, self.ser_frustration,  self.ser_anger])/3)
-        self.ser_disgust = float(sum([self.ser_anger, self.ser_surprise, self.ser_fear])/3)
-
-    def set_fer_emotions(self, fer_result):
+    def set_emotions(self, baye_result):
         """
         Parses the FER result and sets individual emotion probabilities.
         """
-        self.fer_neutral = float(fer_result[0][0])
-        self.fer_happiness = float(fer_result[0][1])
-        self.fer_sadness = float(fer_result[0][2])
-        self.fer_surprise = float(fer_result[0][3])
-        self.fer_fear = float(fer_result[0][4])
-        self.fer_disgust = float(fer_result[0][5])
-        self.fer_anger = float(fer_result[0][6])
-        self.fer_frustration = float(sum([self.fer_anger, self.fer_surprise, self.fer_sadness, self.fer_fear])/4)
+        self.fer_anger = float(baye_result['anger'])
+        self.fer_disgust = float(baye_result['disgust'])
+        self.fer_fear = float(baye_result['fear'])
+        self.fer_happiness = float(baye_result['happiness'])
+        self.fer_neutral = float(baye_result['neutral'])
+        self.fer_sadness = float(baye_result['sadness'])
+        self.fer_surprise = float(baye_result['surprise'])
 
-    def get_dominant_emotion_ser(self):
+    def get_dominant_emotion(self):
         """
-        Determines the dominant emotion based on the highest probability.
+        Returns the emotion with the highest probability.
         """
-        emotions = {
-            "neutral": self.ser_neutral,
-            "anger": self.ser_anger,
-            "happiness": self.ser_happiness,
-            "sadness": self.ser_sadness,
-            "frustration": self.ser_frustration,
-            "surprise": self.ser_surprise,
-            "fear": self.ser_fear,
-            "disgust": self.ser_disgust,
-        }
-
-        dominant_emotion = max(emotions, key=emotions.get)
-        return dominant_emotion
-
-    def get_dominant_emotion_fer(self):
-        """
-        Determines the dominant emotion based on the highest probability.
-        """
-        emotions = {
-            "neutral": self.fer_neutral,
-            "anger": self.fer_anger,
-            "happiness": self.fer_happiness,
-            "sadness": self.fer_sadness,
-            "frustration": self.fer_disgust,
-            "surprise": self.fer_surprise,
-            "fear": self.fer_fear,
-            "disgust": self.fer_disgust,
-        }
-        dominant_emotion = max(emotions, key=emotions.get)
-        return dominant_emotion
-
-    def get_dominant_emotion(self, ser_emotion, fer_emotion):
-        """
-        Determines the dominant emotion based on the highest probability.
-        """
-        emotions = {
-            "neutral": max(self.ser_neutral, self.fer_neutral),
-            "anger": max(self.ser_anger, self.fer_anger),
-            "happiness": max(self.ser_happiness, self.fer_happiness),
-            "sadness": max(self.ser_sadness, self.fer_sadness),
-            "frustration": max(self.ser_frustration, self.fer_disgust),
-            "surprise": max(self.ser_surprise, self.fer_surprise),
-            "fear": max(self.ser_fear, self.fer_fear),
-            "disgust": max(self.ser_disgust, self.fer_disgust),
-        }
-        dominant_emotion = max(emotions, key=emotions.get)
-        print(f"SER Dominant Emotion: {ser_emotion}")
-        print(f"FER Dominant Emotion: {fer_emotion}")
-        print(f"Combined Dominant Emotion: {dominant_emotion}")
-        return dominant_emotion
-
+        return max(self.baye_result, key=self.baye_result.get)
 
     def handle_robot_behavior(self):
         """
         Controls the robot's eyes, voice, and movement based on the dominant SER emotion.
         """
-        ser_emotion = self.get_dominant_emotion_ser()
-        fer_emotion = self.get_dominant_emotion_fer()
-
-        dominant_emotion = self.get_dominant_emotion(ser_emotion, fer_emotion)
+        dominant_emotion = self.get_dominant_emotion()
 
         async def execute_actions():
-            await self.move_eyes(fer_emotion)  # Wait for eyes to finish moving
+            await self.move_eyes(dominant_emotion)  # Wait for eyes to finish moving
             await asyncio.gather(
-                self.move(fer_emotion),
+                self.move(dominant_emotion),
             )
 
-        self.speak(fer_emotion)
+        self.speak(dominant_emotion)
         asyncio.ensure_future(execute_actions())
 
     def speak(self, emotion):

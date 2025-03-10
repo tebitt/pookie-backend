@@ -11,7 +11,7 @@ from queue import Queue
 import time
 
 from handler import Handler
-from eye import RoboEyes
+# from eye import RoboEyes
 
 # Global objects that will be initialized in lifespan
 recorder = None
