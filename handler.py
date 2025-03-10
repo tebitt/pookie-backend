@@ -25,13 +25,13 @@ class Handler:
         """
         Parses the FER result and sets individual emotion probabilities.
         """
-        self.fer_anger = float(baye_result['anger'])
-        self.fer_disgust = float(baye_result['disgust'])
-        self.fer_fear = float(baye_result['fear'])
-        self.fer_happiness = float(baye_result['happiness'])
-        self.fer_neutral = float(baye_result['neutral'])
-        self.fer_sadness = float(baye_result['sadness'])
-        self.fer_surprise = float(baye_result['surprise'])
+        self.anger = float(baye_result['anger'])
+        self.disgust = float(baye_result['disgust'])
+        self.fear = float(baye_result['fear'])
+        self.happiness = float(baye_result['happiness'])
+        self.neutral = float(baye_result['neutral'])
+        self.sadness = float(baye_result['sadness'])
+        self.surprise = float(baye_result['surprise'])
 
     def get_dominant_emotion(self):
         """
