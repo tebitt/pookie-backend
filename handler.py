@@ -33,25 +33,76 @@ class Handler:
         self.sadness = float(baye_result['sadness'])
         self.surprise = float(baye_result['surprise'])
 
-    def get_dominant_emotion(self):
+    def get_decision_tree(self):
+        """
+        Returns the emotion based on the decision tree.
+        """
+        sorted_emotions = self.sort_emotions()[0]
+        max_emotion = sorted_emotions[0]
+        match max_emotion:
+            case 'neutral':
+                if self.neutral >= 0.477: return 'Random Neutral Eyes (pookie_idle_)'
+                elif self.happiness >= self.disgust + self.sadness + self.anger + self.fear: return 'Playful Eyes'
+                else: return 'Slightly Happy Eyes'
+                
+            case 'happy':
+                if self.happiness >= 0.5: return 'Random Happy Eyes'
+                else: return 'Random Playful Eyes' 
+
+            case 'anger': 
+                if self.anger >= 0.42: return 'Listening Eyes'
+                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': return 'Angry but Playful Eyes'
+                elif sorted_emotions[1] == 'sadness': return 'Angry Eyes'
+                elif sorted_emotions[1] == 'disgust' | sorted_emotions[1] == 'fear': return 'Listening Eyes'
+                else: return 'Neutral Eyes'
+                
+            case 'sadness':
+                if self.sadness >= 0.26: return 'Listening Eyes'
+                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': return 'Sad but Playful Eyes'
+                elif sorted_emotions[1] == 'disgust' | sorted_emotions[1] == 'fear': return 'Sad but Playful Eyes 2'
+                elif sorted_emotions[1] == 'anger': return 'Sad, Listening Eyes'
+                else: return 'Neutral Eyes'
+
+            case 'disgust'|'fear':
+                if self.disgust >= 0.36 | self.fear >= 0.3: return 'Listening Eyes'
+                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': return 'Listening Eyes 5'
+                elif sorted_emotions[1] == 'sadness' | sorted_emotions[1] == 'anger': return 'Listening Eyes 6'
+                else: return 'Neutral Eyes'
+
+            case 'surprise':
+                if self.surprise >= 0.5: return 'Surprised Eyes'
+                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': return 'Surprised but Happy Eyes'
+                elif self.happiness < self.disgust + self.sadness + self.anger + self.fear: return 'Surprised but อ้อน'
+                else: return 'Neutral Eyes'
+
+    def sort_emotions(self):
         """
         Returns the emotion with the highest probability.
         """
-        return max(self.baye_result, key=self.baye_result.get)
-
+        emotions = {
+            'anger': self.anger,
+            'disgust': self.disgust,
+            'fear': self.fear,
+            'happiness': self.happiness,
+            'neutral': self.neutral,
+            'sadness': self.sadness,
+            'surprise': self.surprise
+        }
+        return tuple(sorted(emotions, key=emotions.get, reverse=True))
+    
     def handle_robot_behavior(self):
         """
         Controls the robot's eyes, voice, and movement based on the dominant SER emotion.
         """
-        dominant_emotion = self.get_dominant_emotion()
+        decided_emotion = self.get_decision_tree()
 
         async def execute_actions():
-            await self.move_eyes(dominant_emotion)  # Wait for eyes to finish moving
+            await self.move_eyes(decided_emotion)  # Wait for eyes to finish moving
             await asyncio.gather(
-                self.move(dominant_emotion),
+                self.move(decided_emotion),
             )
 
-        self.speak(dominant_emotion)
+        self.speak(decided_emotion)
         asyncio.ensure_future(execute_actions())
 
     def speak(self, emotion):
@@ -65,10 +116,6 @@ class Handler:
 
 
     async def move(self, emotion):
-        DEMO_EXIST = ['neutral', 'sadness', 'happiness']
-        if emotion not in DEMO_EXIST:
-            emotion = "neutral"
-
         # Construct the video path
         current_path = os.getcwd()
         video_path = os.path.join(current_path, 'demo', f'{emotion}.mp4')
