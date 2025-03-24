@@ -1,28 +1,38 @@
 import cv2
-import numpy as np
 from PIL import Image, ImageSequence
+import numpy as np
 import pyautogui
 import os
+import multiprocessing
+import threading
+from fastapi import FastAPI
+import time
 
+app = FastAPI()
 
 class RoboEyes:
-    def __init__(self, gif_paths=[], screen_size=None):
+    def __init__(self, screen_size=None, is_neutral=None):
         if screen_size is None:
             screen_size = pyautogui.size()
         self.screen_size = screen_size
         self.canvas = np.zeros((screen_size[1], screen_size[0], 3), dtype=np.uint8)
         self.window_name = "RoboEyes"
-        self.gif_paths = gif_paths
-        self.gif_frames = []
-        self.current_gif_index = None  # Track the currently playing GIF index
+        self.current_mood = "pookie_neutral_1"
+        self.gif_frames = {}
         self.load_gifs()
+        self.last_mood_time = time.time()  # Track the last time a mood was set
+        self.is_neutral = is_neutral  # Shared multiprocessing-safe variable
+
+    def init_window(self):
         cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
 
-    def load_gifs(self):
-        for path in self.gif_paths:
-            gif = Image.open(path)
-            frames = [frame.copy() for frame in ImageSequence.Iterator(gif)]  # Extract each frame
-            self.gif_frames.append(frames)
+    def load_gifs(self):    
+        for filename in os.listdir('assets'):
+            if filename.endswith('.gif'):
+                file_path = os.path.join('assets', filename)
+                gif = Image.open(file_path)
+                frames = [frame.copy() for frame in ImageSequence.Iterator(gif)]
+                self.gif_frames[filename[:-4]] = frames 
 
     def show_frame(self, frame):
         frame_rgb = np.array(frame.convert('RGB'))
@@ -30,41 +40,95 @@ class RoboEyes:
         frame_resized = cv2.resize(frame_bgr, self.screen_size)
         cv2.imshow(self.window_name, frame_resized)
 
-    def run(self, fps=1):
-        delay_between_frames = int(1000 / fps)  # Calculate delay in milliseconds
+    def run(self, fps=1, status_queue=None):
+        delay_between_frames = int(1000 / fps)
         while True:
-            cv2.imshow(self.window_name, self.canvas)
+            if status_queue is not None:
+                self.update(status_queue, delay_between_frames)
+                cv2.waitKey(1)
 
-            key = cv2.waitKey(100)  
+    def update(self, status_queue, delay_between_frames):
+        self.status_queue = status_queue  # Store the queue for access in animate_mood
+        cv2.imshow(self.window_name, self.canvas)
 
-            if key == ord('1'):
-                self.current_gif_index = 0  
-            if key == ord('2'):
-                self.current_gif_index = 1  
-            if key == ord('3'):
-                self.current_gif_index = 2  
-            if key == ord('q'):  
-                break
+        # Check if it's time to revert to neutral
+        if time.time() - self.last_mood_time > 5 and not self.is_neutral.value:  # 5 seconds timeout for neutral fallback
+            self.current_mood = "pookie_neutral_1"
+            self.is_neutral.value = True
 
-            if self.current_gif_index is not None:
-                self.show_gif(self.current_gif_index, delay_between_frames)
+        # Process the latest mood in the queue (only if current mood is neutral)
+        if self.is_neutral.value and not status_queue.empty():
+            # Clear the queue to ensure only the latest mood is processed
+            while not status_queue.empty():
+                mood = status_queue.get()
+            if mood != "pookie_neutral_1":  # Non-neutral mood detected
+                self.current_mood = mood
+                self.is_neutral.value = False
+                self.last_mood_time = time.time()  # Update the last mood time
 
-        cv2.destroyAllWindows()
-
-    def show_gif(self, gif_index, delay):
-        if gif_index < len(self.gif_frames):
-            gif = self.gif_frames[gif_index]
+        # Animate the current mood
+        self.animate_mood(self.current_mood, delay_between_frames)
+            
+    def animate_mood(self, mood, delay):
+        if mood in self.gif_frames:
+            gif = self.gif_frames[mood]
             for frame in gif:
                 self.show_frame(frame)
-                # Check if a key has been pressed during the GIF display
-                if cv2.waitKey(delay) in [ord('1'), ord('2'), ord('3'), ord('q')]:
-                    break  # Stop the current GIF and break to check for new input
+                # Check for new mood in the queue (only if current mood is neutral)
+                if self.is_neutral.value and not self.status_queue.empty():
+                    new_mood = self.status_queue.get()
+                    if new_mood != "pookie_neutral_1":  # Non-neutral mood detected
+                        self.current_mood = new_mood
+                        self.is_neutral.value = False
+                        self.last_mood_time = time.time()  # Update the last mood time
+                        self.animate_mood(new_mood, delay)  # Play the new mood immediately
+                        return  # Exit the current animation loop
+                cv2.waitKey(delay)
         else:
-            print(f"No GIF available for index {gif_index}")
+            print(f"No GIF available for mood {mood}")
 
-# examples
-gif_paths = ["assets/pookie_neutral_1.gif", "assets/pookie_angry_1.gif", "assets/pookie_angry_2.gif"]
+    def read_current_mood(self):
+        return self.current_mood
 
-robo_eyes = RoboEyes(gif_paths=gif_paths)
+    def set_current_mood(self, mood):
+        self.current_mood = mood
 
-robo_eyes.run(fps=2)
+# Global variables to share state between processes
+status_queue = multiprocessing.Queue()
+is_neutral = multiprocessing.Value('b', True)  # Shared variable to track neutral state
+robo_eyes_process = None
+
+@app.get("/set_status")
+async def set_status(mood: str):
+    global status_queue, robo_eyes_process, is_neutral
+
+    if robo_eyes_process is None:
+        return {"message": "RoboEyes process is not running"}
+
+    # Only add to the queue if the current mood is neutral
+    if is_neutral.value:
+        # Clear the queue to ensure only the latest mood is processed
+        while not status_queue.empty():
+            status_queue.get()
+
+        # Send the new mood to the RoboEyes process
+        status_queue.put(mood)
+        return {"message": f"{mood.capitalize()} mode activated"}
+    else:
+        return {"message": "Cannot set new mood: non-neutral mood is currently playing"}
+
+def run_fastapi():
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8081)
+
+def run_eye_process(status_queue, is_neutral):
+    robo_eyes = RoboEyes(is_neutral=is_neutral)
+    robo_eyes.run(fps=2, status_queue=status_queue)
+
+if __name__ == "__main__":
+    # Create and start the RoboEyes process
+    robo_eyes_process = multiprocessing.Process(target=run_eye_process, args=(status_queue, is_neutral))
+    robo_eyes_process.start()
+
+    # Run FastAPI server in the main thread
+    run_fastapi()

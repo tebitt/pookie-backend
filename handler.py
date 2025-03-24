@@ -5,6 +5,7 @@ import aiohttp
 import asyncio
 import os
 import pygame
+import random
 import cv2
 
 class Handler:
@@ -41,39 +42,39 @@ class Handler:
         max_emotion = sorted_emotions[0]
         match max_emotion:
             case 'neutral':
-                if self.neutral >= 0.477: return 'Random Neutral Eyes (pookie_idle_)'
-                elif self.happiness >= self.disgust + self.sadness + self.anger + self.fear: return 'Playful Eyes'
-                else: return 'Slightly Happy Eyes'
+                if self.neutral >= 0.477: self.move_eyes('pookie_neutral_1')
+                elif self.happiness >= self.disgust + self.sadness + self.anger + self.fear:  self.move_eyes('pookie_slightly_happy')
+                else: self.move_eyes('pookie_playful_1')
                 
             case 'happy':
-                if self.happiness >= 0.5: return 'Random Happy Eyes'
-                else: return 'Random Playful Eyes' 
+                if self.happiness >= 0.5: self.move_eyes(random.choice['pookie_slightly_happy', 'pookie_very_happy']) 
+                else: self.move_eyes(random.choice['pookie_playful_2', 'pookie_playful_3']) 
 
             case 'anger': 
-                if self.anger >= 0.42: return 'Listening Eyes'
-                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': return 'Angry but Playful Eyes'
-                elif sorted_emotions[1] == 'sadness': return 'Angry Eyes'
-                elif sorted_emotions[1] == 'disgust' | sorted_emotions[1] == 'fear': return 'Listening Eyes'
-                else: return 'Neutral Eyes'
+                if self.anger >= 0.42: self.move_eyes('pookie_listen_1')
+                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': self.move_eyes('pookie_angry_1')
+                elif sorted_emotions[1] == 'sadness': self.move_eyes('pookie_angry_2')
+                elif sorted_emotions[1] == 'disgust' | sorted_emotions[1] == 'fear': self.move_eyes('pookie_listen_3')
+                else: self.move_eyes('pookie_neutral_1')
                 
             case 'sadness':
-                if self.sadness >= 0.26: return 'Listening Eyes'
-                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': return 'Sad but Playful Eyes'
-                elif sorted_emotions[1] == 'disgust' | sorted_emotions[1] == 'fear': return 'Sad but Playful Eyes 2'
-                elif sorted_emotions[1] == 'anger': return 'Sad, Listening Eyes'
-                else: return 'Neutral Eyes'
+                if self.sadness >= 0.26: self.move_eyes('pookie_listen_2')
+                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': self.move_eyes('pookie_sad_1')
+                elif sorted_emotions[1] == 'disgust' | sorted_emotions[1] == 'fear': self.move_eyes('pookie_sad_2')
+                elif sorted_emotions[1] == 'anger': self.move_eyes('pookie_listen_4')
+                else: self.move_eyes('pookie_neutral_1')
 
             case 'disgust'|'fear':
-                if self.disgust >= 0.36 | self.fear >= 0.3: return 'Listening Eyes'
-                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': return 'Listening Eyes 5'
-                elif sorted_emotions[1] == 'sadness' | sorted_emotions[1] == 'anger': return 'Listening Eyes 6'
-                else: return 'Neutral Eyes'
+                if self.disgust >= 0.36 | self.fear >= 0.3: self.move_eyes('pookie_listen_7')
+                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': self.move_eyes('pookie_listen_5')
+                elif sorted_emotions[1] == 'sadness' | sorted_emotions[1] == 'anger': self.move_eyes('pookie_listen_6')
+                else: self.move_eyes('pookie_neutral_1')
 
             case 'surprise':
                 if self.surprise >= 0.5: return 'Surprised Eyes'
-                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': return 'Surprised but Happy Eyes'
-                elif self.happiness < self.disgust + self.sadness + self.anger + self.fear: return 'Surprised but อ้อน'
-                else: return 'Neutral Eyes'
+                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': self.move_eyes('pookie_surprise_1')
+                elif self.happiness < self.disgust + self.sadness + self.anger + self.fear: self.move_eyes('pookie_surprise_2')
+                else: self.move_eyes('pookie_neutral_1')
 
     def sort_emotions(self):
         """
