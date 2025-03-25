@@ -5,10 +5,12 @@ import pyautogui
 import os
 import multiprocessing
 import threading
+import random
 from fastapi import FastAPI
 import time
 
 app = FastAPI()
+IDLE_EMOTIONS = ('pookie_idle_1', 'pookie_idle_2', 'pookie_idle_3', 'pookie_idle_4', 'pookie_neutral_1')
 
 class RoboEyes:
     def __init__(self, screen_size=None, is_neutral=None):
@@ -17,7 +19,7 @@ class RoboEyes:
         self.screen_size = screen_size
         self.canvas = np.zeros((screen_size[1], screen_size[0], 3), dtype=np.uint8)
         self.window_name = "RoboEyes"
-        self.current_mood = "pookie_neutral_1"
+        self.current_mood = random.choice(IDLE_EMOTIONS)
         self.gif_frames = {}
         self.load_gifs()
         self.last_mood_time = time.time()  # Track the last time a mood was set
@@ -53,7 +55,7 @@ class RoboEyes:
 
         # Check if it's time to revert to neutral
         if time.time() - self.last_mood_time > 5 and not self.is_neutral.value:  # 5 seconds timeout for neutral fallback
-            self.current_mood = "pookie_neutral_1"
+            self.current_mood = random.choice([IDLE_EMOTIONS])
             self.is_neutral.value = True
 
         # Process the latest mood in the queue (only if current mood is neutral)
@@ -61,10 +63,12 @@ class RoboEyes:
             # Clear the queue to ensure only the latest mood is processed
             while not status_queue.empty():
                 mood = status_queue.get()
-            if mood != "pookie_neutral_1":  # Non-neutral mood detected
+            if mood not in IDLE_EMOTIONS:  # Non-neutral mood detected
                 self.current_mood = mood
                 self.is_neutral.value = False
                 self.last_mood_time = time.time()  # Update the last mood time
+        else:
+            self.current_mood = random.choice(IDLE_EMOTIONS)
 
         # Animate the current mood
         self.animate_mood(self.current_mood, delay_between_frames)
@@ -77,7 +81,7 @@ class RoboEyes:
                 # Check for new mood in the queue (only if current mood is neutral)
                 if self.is_neutral.value and not self.status_queue.empty():
                     new_mood = self.status_queue.get()
-                    if new_mood != "pookie_neutral_1":  # Non-neutral mood detected
+                    if new_mood not in IDLE_EMOTIONS:  # Non-neutral mood detected
                         self.current_mood = new_mood
                         self.is_neutral.value = False
                         self.last_mood_time = time.time()  # Update the last mood time
@@ -123,7 +127,7 @@ def run_fastapi():
 
 def run_eye_process(status_queue, is_neutral):
     robo_eyes = RoboEyes(is_neutral=is_neutral)
-    robo_eyes.run(fps=2, status_queue=status_queue)
+    robo_eyes.run(fps=1, status_queue=status_queue)
 
 if __name__ == "__main__":
     # Create and start the RoboEyes process

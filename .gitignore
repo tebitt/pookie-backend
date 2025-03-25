@@ -1,7 +1,10 @@
 temp
 __pycache__
 exp_colab
+demo
 dataset
 *.png
 .DS_Store
 tempCodeRunnerFile.py
+test*.py
+demo

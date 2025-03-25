@@ -34,47 +34,47 @@ class Handler:
         self.sadness = float(baye_result['sadness'])
         self.surprise = float(baye_result['surprise'])
 
-    def get_decision_tree(self):
+    def decision_tree(self):
         """
         Returns the emotion based on the decision tree.
         """
-        sorted_emotions = self.sort_emotions()[0]
+        sorted_emotions = self.sort_emotions()
         max_emotion = sorted_emotions[0]
         match max_emotion:
             case 'neutral':
-                if self.neutral >= 0.477: self.move_eyes('pookie_neutral_1')
-                elif self.happiness >= self.disgust + self.sadness + self.anger + self.fear:  self.move_eyes('pookie_slightly_happy')
-                else: self.move_eyes('pookie_playful_1')
+                if self.neutral >= 0.477: return 'pookie_neutral_1'
+                elif self.happiness >= self.disgust + self.sadness + self.anger + self.fear: 'pookie_slightly_happy'
+                else: return 'pookie_playful_1'
                 
             case 'happy':
-                if self.happiness >= 0.5: self.move_eyes(random.choice['pookie_slightly_happy', 'pookie_very_happy']) 
-                else: self.move_eyes(random.choice['pookie_playful_2', 'pookie_playful_3']) 
+                if self.happiness >= 0.5: return random.choice(['pookie_slightly_happy', 'pookie_very_happy'])
+                else: return random.choice(['pookie_playful_2', 'pookie_playful_3'])
 
             case 'anger': 
-                if self.anger >= 0.42: self.move_eyes('pookie_listen_1')
-                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': self.move_eyes('pookie_angry_1')
-                elif sorted_emotions[1] == 'sadness': self.move_eyes('pookie_angry_2')
-                elif sorted_emotions[1] == 'disgust' | sorted_emotions[1] == 'fear': self.move_eyes('pookie_listen_3')
-                else: self.move_eyes('pookie_neutral_1')
+                if self.anger >= 0.42: return 'pookie_listen_1'
+                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': return 'pookie_angry_1'
+                elif sorted_emotions[1] == 'sadness': return 'pookie_angry_2'
+                elif sorted_emotions[1] == 'disgust' | sorted_emotions[1] == 'fear': return 'pookie_listen_3'
+                else: return 'pookie_neutral_1'
                 
             case 'sadness':
-                if self.sadness >= 0.26: self.move_eyes('pookie_listen_2')
-                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': self.move_eyes('pookie_sad_1')
-                elif sorted_emotions[1] == 'disgust' | sorted_emotions[1] == 'fear': self.move_eyes('pookie_sad_2')
-                elif sorted_emotions[1] == 'anger': self.move_eyes('pookie_listen_4')
-                else: self.move_eyes('pookie_neutral_1')
+                if self.sadness >= 0.26: return 'pookie_listen_2'
+                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': return 'pookie_sad_1'
+                elif sorted_emotions[1] == 'disgust' | sorted_emotions[1] == 'fear': return 'pookie_sad_2'
+                elif sorted_emotions[1] == 'anger': return 'pookie_listen_4'
+                else: return 'pookie_neutral_1'
 
             case 'disgust'|'fear':
-                if self.disgust >= 0.36 | self.fear >= 0.3: self.move_eyes('pookie_listen_7')
-                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': self.move_eyes('pookie_listen_5')
-                elif sorted_emotions[1] == 'sadness' | sorted_emotions[1] == 'anger': self.move_eyes('pookie_listen_6')
-                else: self.move_eyes('pookie_neutral_1')
+                if self.disgust >= 0.36 | self.fear >= 0.3: return 'pookie_listen_7'
+                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': return 'pookie_listen_5'
+                elif sorted_emotions[1] == 'sadness' | sorted_emotions[1] == 'anger': return 'pookie_listen_6'
+                else: return 'pookie_neutral_1'
 
             case 'surprise':
-                if self.surprise >= 0.5: return 'Surprised Eyes'
-                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': self.move_eyes('pookie_surprise_1')
-                elif self.happiness < self.disgust + self.sadness + self.anger + self.fear: self.move_eyes('pookie_surprise_2')
-                else: self.move_eyes('pookie_neutral_1')
+                if self.surprise >= 0.5: return 'pookie_surprise_3'
+                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': return 'pookie_surprise_1'
+                elif self.happiness < self.disgust + self.sadness + self.anger + self.fear: return 'pookie_surprise_2'
+                else: return 'pookie_neutral_1'
 
     def sort_emotions(self):
         """
@@ -95,7 +95,7 @@ class Handler:
         """
         Controls the robot's eyes, voice, and movement based on the dominant SER emotion.
         """
-        decided_emotion = self.get_decision_tree()
+        decided_emotion = self.decision_tree()
 
         async def execute_actions():
             await self.move_eyes(decided_emotion)  # Wait for eyes to finish moving
