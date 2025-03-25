@@ -1,13 +1,21 @@
 import numpy as np
 from pydub import AudioSegment
 from pydub.playback import play
+import time
 import aiohttp
 import asyncio
 import os
 import pygame
 import random
 import cv2
+from adafruit_servokit import ServoKit
 
+motor = ServoKit(channels = 16)
+
+lm = motor.servo[0]
+bm = motor.servo[4]
+um = motor.servo[8]
+rm = motor.servo[12]
 class Handler:
     def __init__(self, baye_result=None):
         self.baye_result = baye_result
@@ -52,27 +60,27 @@ class Handler:
 
             case 'anger': 
                 if self.anger >= 0.42: return 'pookie_listen_1'
-                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': return 'pookie_angry_1'
+                elif sorted_emotions[1] == 'happiness' or sorted_emotions[1] == 'neutral': return 'pookie_angry_1'
                 elif sorted_emotions[1] == 'sadness': return 'pookie_angry_2'
-                elif sorted_emotions[1] == 'disgust' | sorted_emotions[1] == 'fear': return 'pookie_listen_3'
+                elif sorted_emotions[1] == 'disgust' or sorted_emotions[1] == 'fear': return 'pookie_listen_3'
                 else: return 'pookie_neutral_1'
                 
             case 'sadness':
                 if self.sadness >= 0.26: return 'pookie_listen_2'
-                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': return 'pookie_sad_1'
-                elif sorted_emotions[1] == 'disgust' | sorted_emotions[1] == 'fear': return 'pookie_sad_2'
+                elif sorted_emotions[1] == 'happiness' or sorted_emotions[1] == 'neutral': return 'pookie_sad_1'
+                elif sorted_emotions[1] == 'disgust' or sorted_emotions[1] == 'fear': return 'pookie_sad_2'
                 elif sorted_emotions[1] == 'anger': return 'pookie_listen_4'
                 else: return 'pookie_neutral_1'
 
             case 'disgust'|'fear':
-                if self.disgust >= 0.36 | self.fear >= 0.3: return 'pookie_listen_7'
-                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': return 'pookie_listen_5'
-                elif sorted_emotions[1] == 'sadness' | sorted_emotions[1] == 'anger': return 'pookie_listen_6'
+                if self.disgust >= 0.36 or self.fear >= 0.3: return 'pookie_listen_7'
+                elif sorted_emotions[1] == 'happiness' or sorted_emotions[1] == 'neutral': return 'pookie_listen_5'
+                elif sorted_emotions[1] == 'sadness' or sorted_emotions[1] == 'anger': return 'pookie_listen_6'
                 else: return 'pookie_neutral_1'
 
             case 'surprise':
                 if self.surprise >= 0.5: return 'pookie_surprise_3'
-                elif sorted_emotions[1] == 'happiness' | sorted_emotions[1] == 'neutral': return 'pookie_surprise_1'
+                elif sorted_emotions[1] == 'happiness' or sorted_emotions[1] == 'neutral': return 'pookie_surprise_1'
                 elif self.happiness < self.disgust + self.sadness + self.anger + self.fear: return 'pookie_surprise_2'
                 else: return 'pookie_neutral_1'
 
@@ -117,61 +125,89 @@ class Handler:
 
 
     async def move(self, emotion):
-        # Construct the video path
-        current_path = os.getcwd()
-        video_path = os.path.join(current_path, 'demo', f'{emotion}.mp4')
+        """
+        Moves the robot based on the emotion.
+        """
+        def move(m, angle):
+            m.angle = angle
 
-        try:
-            if not os.path.exists(video_path):
-                raise FileNotFoundError(f"Video file '{video_path}' not found.")
+        def base():
+            move(rm,180) # decrease angle -> rotates up
+            move(lm,120) # increase angle -> rotates up
+            move(um,180) #decrease angle -> go left
+            move(bm,90)
 
-            # Initialize Pygame
-            pygame.init()
-            pygame.display.set_caption(f"Playing: {emotion}")
+        def action_1():
+            base()
+            time.sleep(0.2)
+            move(rm,120)
+            move(um,120)
+            time.sleep(3)
+            base()
 
-            # Open the video file with OpenCV
-            cap = cv2.VideoCapture(video_path)
-            if not cap.isOpened():
-                raise Exception(f"Unable to open video: {video_path}")
+        def action_2():
+            base()
+            for i in range(2):
+                move(rm,120)
+                move(lm,180)
+                # move(um,180)
+                # move(um,120)
+                time.sleep(0.2)
+                base()
+                time.sleep(0.2)
+            base()
+        def action_3():
+            base()
+            for i in range(2):
+                move(bm,180)
+                move(lm,180)
+                move(rm,120)
+                time.sleep(0.3)
+                move(lm,120)
+                move(rm,180)
+                time.sleep(0.3)   
+                move(bm,60)
+                time.sleep(0.3) 
+            base()
 
-            # Get video dimensions
-            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            fps = cap.get(cv2.CAP_PROP_FPS) or 30  # Default to 30 FPS if FPS is unavailable
+        def action_6():
+            base()
+            for i in range(4):
+                move(rm,120)
+                move(lm,180)
+            
+                time.sleep(0.3)   
 
-            # Create Pygame window
-            screen = pygame.display.set_mode((width, height))
+                base()
 
-            # Main loop to play video
-            clock = pygame.time.Clock()
-            while cap.isOpened():
-                for event in pygame.event.get():
-                    if event.type == pygame.QUIT:
-                        cap.release()
-                        pygame.quit()
-                        return
+                time.sleep(0.3)   
 
-                ret, frame = cap.read()
-                if not ret:
-                    break
-
-                # Convert OpenCV frame (BGR) to Pygame surface (RGB)
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frame = pygame.surfarray.make_surface(frame.swapaxes(0, 1))
-
-                # Display the frame in Pygame
-                screen.blit(frame, (0, 0))
-                pygame.display.flip()
-
-                # Maintain video frame rate
-                clock.tick(fps)
-
-            # Clean up after playback
-            cap.release()
-            pygame.quit()
-
-        except Exception as e:
-            print(f"An error occurred: {e}")
+        match emotion:
+            case 'pookie_neutral_1':
+                print("Neutral")
+            case 'pookie_slightly_happy':
+                print("Slightly happy")
+                action_1()
+            case 'pookie_very_happy':
+                print("Very happy")
+                action_3()
+            case 'pookie_playful_1':
+                action_2()
+            case 'pookie_playful_2':
+                print("Playful 2")
+            case 'pookie_playful_3':
+                print("Playful 3")
+            case 'pookie_listen_1':
+                print("Listen 1")
+            case 'pookie_listen_3':
+                print("Listen 3")
+            case 'pookie_angry_1':
+                print("Angry 1")
+            case 'pookie_angry_2':
+                print("Angry 2")
+            case 'pookie_sad_1':
+                print("Sad 1")
+                action_6()
 
 
     async def move_eyes(self, expression):
