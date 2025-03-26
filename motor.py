@@ -6,13 +6,12 @@ lm = motor.servo[0]
 bm = motor.servo[4]
 um = motor.servo[8]
 rm = motor.servo[12]
+test = motor.continuous_servo[15]
 
-# SLOW_SPEED = 100
-# MODERATE_SPEED = 150
-# FAST_SPEED = 200
-
-# lm.set_pulse_width_range(500,2400)
-# rm.set_pulse_width_range(500,2400)
+def move_continous(servos,speed):
+    for s,speed in zip(servos,speed):
+        s.angle = speed
+    time.sleep(0.1)
 
 def move(m, angle):
     m.angle = angle
@@ -81,14 +80,14 @@ def action_6():
 def test():
     move(um,180)
 
-action_1()
-time.sleep(1)
-action_2()
-time.sleep(1)
-action_3()
-time.sleep(1)
-action_6()
-time.sleep(1)
+# action_1()
+# time.sleep(1)
+# action_2()
+# time.sleep(1)
+# action_3()
+# time.sleep(1)
+# action_6()
+# time.sleep(1)
 
 # def move(m, target_angle, speed):
 #     current_angle = m.angle
