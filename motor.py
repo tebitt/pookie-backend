@@ -6,7 +6,6 @@ lm = motor.servo[0]
 bm = motor.servo[4]
 um = motor.servo[8]
 rm = motor.servo[12]
-test = motor.continuous_servo[15]
 
 def move_continous(servos,speed):
     for s,speed in zip(servos,speed):
@@ -24,48 +23,66 @@ def base():
 
 def action_1():
     base()
-    time.sleep(0.2)
+    time.sleep(0.1)
     move(rm,120)
     move(um,120)
-    time.sleep(3)
+    time.sleep(8)
     base()
 
 def action_2():
+    start_time = time.time()  # Get the start time
+    duration = 10  
+
     base()
-    for i in range(2):
-        move(rm,120)
-        move(lm,180)
-        # move(um,180)
-        # move(um,120)
+    while time.time() - start_time < duration:
+        move(rm, 120)
+        move(lm, 180)
+        move(um, 180)
+        move(um, 120)
         time.sleep(0.2)
         base()
         time.sleep(0.2)
+
     base()
 
 def action_3():
+    start_time = time.time()  # Get the start time
+    duration = 12  # Run for exactly 12 seconds
+    move(lm, 180)
+    move(rm, 120)
     base()
-    for i in range(2):
-        move(bm,180)
-        move(lm,180)
-        move(rm,120)
 
+    while time.time() - start_time < duration:
         time.sleep(0.3)
+        move(bm, 180)
+        time.sleep(0.3)
+        move(bm, 60)
 
-        move(lm,120)
-        move(rm,180)
+    base()
+ 
+def action_4():
+    start_time = time.time() 
+    duration = 8  
+    half_duration = duration / 2  # 4 seconds for each direction
 
-        time.sleep(0.3)   
+    # Move head right for the first half
+    while time.time() - start_time < half_duration:
+        move(um, 180)  
 
-        move(bm,60)
-
-
-        time.sleep(0.3) 
+    # Move head left for the second half
+    while time.time() - start_time < duration:
+        move(um, 120)  
 
     base()
 
- 
+def action_5(duration):
+    base()
+    time.sleep(0.1)
+    move(rm,150)
+    time.sleep(duration)
+    base()
 
-def action_6():
+def action_6(duration):
     base()
     for i in range(4):
         move(rm,120)
@@ -76,10 +93,6 @@ def action_6():
         base()
 
         time.sleep(0.3)   
-    
-def test():
-    move(um,180)
-
 # action_1()
 # time.sleep(1)
 # action_2()
