@@ -18,7 +18,7 @@ from rate_limiter import RateLimiter
 import os, glob
 
 FER_DICT_EMO = {"neutral": 0, "anger": 1, "happiness": 2, "sadness": 3, "disgust": 4, "fear": 5, "surprise": 6}
-SER_DICT_EMO = {"neutral": 0, "anger": 1, "happiness": 2, "sadness": 3, "disgust": 4}
+SER_DICT_EMO = {"neutral": 0, "anger": 1, "happiness": 2, "sadness": 3, "frustration": 4}
 EMOTION_TABLE = {"neutral": "", "anger": "", "happiness": "", "sadness": "", "disgust": "", "fear": "", "surprise": ""}
 BAYE_EMOTION = {"neutral": 0, "anger": 0, "happiness": 0, "sadness": 0, "disgust": 0, "fear": 0, "surprise": 0}
 
@@ -286,8 +286,8 @@ async def main():
 
     handler = Handler()
 
-    ser_rate_limiter = RateLimiter(interval_seconds=20)
-    handler_rate_limiter = RateLimiter(interval_seconds=20)
+    ser_rate_limiter = RateLimiter(interval_seconds=10)
+    handler_rate_limiter = RateLimiter(interval_seconds=10)
 
     
     mp_face_mesh = mp.solutions.face_mesh
@@ -308,8 +308,7 @@ async def main():
     DICT_EMO = {0: FER_LABELS[0], 1: FER_LABELS[1], 2: FER_LABELS[2], 3: FER_LABELS[3], 4: FER_LABELS[4], 5: FER_LABELS[5], 6: FER_LABELS[6]}
 
     async with aiohttp.ClientSession() as session:
-        cap = cv2.VideoCapture(1)
-        cv2.namedWindow('Emotion Detection', cv2.WINDOW_NORMAL)
+        cap = cv2.VideoCapture(0)
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = np.round(cap.get(cv2.CAP_PROP_FPS))
@@ -358,6 +357,7 @@ async def main():
                             if ser_prediction['prediction'] is not None:
                                 if last_ser_prediction['prediction']['name'] != ser_prediction['prediction']['name']:
                                     last_ser_prediction = ser_prediction
+                        print('ser_prediction:', ser_prediction)
                     
                         # Display the last known SER prediction and waiting time
                         y_position = 30  # Starting y position for text
@@ -371,8 +371,12 @@ async def main():
                             fer_values = output[0]
                             inferred_fer_label = FER_LABELS[max(range(len(fer_values)), key=lambda i: fer_values[i])]
                             inferred_ser_label = max(last_ser_prediction['prediction']['prob'], key=lambda k: float(last_ser_prediction['prediction']['prob'][k]))
+                            print('inferred fer:', inferred_fer_label)
+                            print('inferred ser:', inferred_ser_label)
                             for emotion in EMOTION_TABLE:
                                 BAYE_EMOTION[emotion] = EMOTION_TABLE[emotion][FER_DICT_EMO[inferred_fer_label]][SER_DICT_EMO[inferred_ser_label]]
+                            
+                            print(BAYE_EMOTION)
                             handler = Handler(BAYE_EMOTION)
                             handler.handle_robot_behavior()
 

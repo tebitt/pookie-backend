@@ -25,8 +25,8 @@ class RoboEyes:
         self.last_mood_time = time.time()  # Track the last time a mood was set
         self.is_neutral = is_neutral  # Shared multiprocessing-safe variable
 
-    def init_window(self):
-        cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+        cv2.namedWindow(self.window_name, cv2.WND_PROP_FULLSCREEN)
+        cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
     def load_gifs(self):    
         for filename in os.listdir('assets'):

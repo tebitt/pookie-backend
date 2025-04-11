@@ -11,7 +11,6 @@ from queue import Queue
 import time
 
 from handler import Handler
-# from eye import RoboEyes
 
 # Global objects that will be initialized in lifespan
 recorder = None
@@ -58,13 +57,12 @@ class AudioRecorder:
         while not self.stop_flag:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             audio_filename = f"{self.temp_dir}/recorded_audio_{timestamp}.wav"
-            
             # Start recording
             command = [
                 "ffmpeg",
                 "-y",
-                "-f", "avfoundation",
-                "-i", ":0",
+                "-f", "pulse",
+                "-i", "default",
                 "-t", "5",
                 "-ar", "16000",
                 "-ac", "2",
@@ -83,10 +81,13 @@ class AudioRecorder:
 
     def _cleanup_old_files(self):
         # Keep only the last 5 recordings
+        print("Cleaning up old files")
         files = sorted([f for f in os.listdir(self.temp_dir) if f.startswith("recorded_audio")])
         for old_file in files[:-1]:
             try:
                 os.remove(os.path.join(self.temp_dir, old_file))
+                print("Old files cleaned")
+                print("*–*-*-*-*-*-*-*-*-*-*-*-*")
             except:
                 pass
 
@@ -112,16 +113,20 @@ class PredictionWorker:
                 inference_results = [infer_sample(self.model, sample, emotions=self.thaiser_module.emotions)
                                    for sample in inference_loader]
                 
+                print("Inference Results:", inference_results)
                 # Store the latest prediction
                 self.latest_prediction = inference_results[0] if inference_results else None
                 # Clean up the processed file
                 try:
+                    print("Removing audio file after processing.")
                     os.remove(audio_filename)
+                    print("Audio file removed.")
                 except:
                     pass
                 
             except:
-                # No audio file in queue
+                print("No audiofile in queue.")
+                print("*–*-*-*-*-*-*-*-*-*-*-*-*")
                 pass
 
     def stop(self):
