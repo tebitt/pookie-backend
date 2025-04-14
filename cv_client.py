@@ -9,13 +9,15 @@ import warnings
 warnings.simplefilter("ignore", UserWarning)
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn 
+import torch.nn.functional 
 from PIL import Image
 from torchvision import transforms
 from handler import Handler
 from rate_limiter import RateLimiter
 import os, glob
+
+from cv_models import Bottleneck, ResNet, LSTMPyTorch
 
 FER_DICT_EMO = {"neutral": 0, "anger": 1, "happiness": 2, "sadness": 3, "disgust": 4, "fear": 5, "surprise": 6}
 SER_DICT_EMO = {"neutral": 0, "anger": 1, "happiness": 2, "sadness": 3, "frustration": 4}
@@ -33,137 +35,6 @@ for csv in csv_list:
         EMOTION_TABLE[csv[len(NODE_DIR) + 1:-4]] = table
 
 SER_SERVER_URL = 'http://127.0.0.1:8080'
-
-class Bottleneck(nn.Module):
-    expansion = 4
-    def __init__(self, in_channels, out_channels, i_downsample=None, stride=1):
-        super(Bottleneck, self).__init__()
-        
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, padding=0, bias=False)
-        self.batch_norm1 = nn.BatchNorm2d(out_channels, eps=0.001, momentum=0.99)
-        
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding='same', bias=False)
-        self.batch_norm2 = nn.BatchNorm2d(out_channels, eps=0.001, momentum=0.99)
-        
-        self.conv3 = nn.Conv2d(out_channels, out_channels*self.expansion, kernel_size=1, stride=1, padding=0, bias=False)
-        self.batch_norm3 = nn.BatchNorm2d(out_channels*self.expansion, eps=0.001, momentum=0.99)
-        
-        self.i_downsample = i_downsample
-        self.stride = stride
-        self.relu = nn.ReLU()
-        
-    def forward(self, x):
-        identity = x.clone()
-        x = self.relu(self.batch_norm1(self.conv1(x)))
-        
-        x = self.relu(self.batch_norm2(self.conv2(x)))
-        
-        x = self.conv3(x)
-        x = self.batch_norm3(x)
-        
-        if self.i_downsample is not None:
-            identity = self.i_downsample(identity)
-        x+=identity
-        x=self.relu(x)
-        
-        return x
-
-class Conv2dSame(torch.nn.Conv2d):
-    def calc_same_pad(self, i: int, k: int, s: int, d: int) -> int:
-        return max((math.ceil(i / s) - 1) * s + (k - 1) * d + 1 - i, 0)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        ih, iw = x.size()[-2:]
-
-        pad_h = self.calc_same_pad(i=ih, k=self.kernel_size[0], s=self.stride[0], d=self.dilation[0])
-        pad_w = self.calc_same_pad(i=iw, k=self.kernel_size[1], s=self.stride[1], d=self.dilation[1])
-
-        if pad_h > 0 or pad_w > 0:
-            x = F.pad(
-                x, [pad_w // 2, pad_w - pad_w // 2, pad_h // 2, pad_h - pad_h // 2]
-            )
-        return F.conv2d(
-            x,
-            self.weight,
-            self.bias,
-            self.stride,
-            self.padding,
-            self.dilation,
-            self.groups,
-        )
-
-class ResNet(nn.Module):
-    def __init__(self, ResBlock, layer_list, num_classes, num_channels=3):
-        super(ResNet, self).__init__()
-        self.in_channels = 64
-        
-        self.conv_layer_s2_same = Conv2dSame(num_channels, 64, 7, stride=2, groups=1, bias=False)
-        self.batch_norm1 = nn.BatchNorm2d(64, eps=0.001, momentum=0.99)
-        self.relu = nn.ReLU()
-        self.max_pool = nn.MaxPool2d(kernel_size = 3, stride=2)
-        
-        self.layer1 = self._make_layer(ResBlock, layer_list[0], planes=64, stride=1)
-        self.layer2 = self._make_layer(ResBlock, layer_list[1], planes=128, stride=2)
-        self.layer3 = self._make_layer(ResBlock, layer_list[2], planes=256, stride=2)
-        self.layer4 = self._make_layer(ResBlock, layer_list[3], planes=512, stride=2)
-        
-        self.avgpool = nn.AdaptiveAvgPool2d((1,1))
-        self.fc1 = nn.Linear(512*ResBlock.expansion, 512)
-        self.relu1 = nn.ReLU()
-        self.fc2 = nn.Linear(512, num_classes)
-
-    def extract_features(self, x):
-        x = self.relu(self.batch_norm1(self.conv_layer_s2_same(x)))
-        x = self.max_pool(x)
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        
-        x = self.avgpool(x)
-        x = x.reshape(x.shape[0], -1)
-        x = self.fc1(x)
-        return x
-        
-    def forward(self, x):
-        x = self.extract_features(x)
-        x = self.relu1(x)
-        x = self.fc2(x)
-        return x
-        
-    def _make_layer(self, ResBlock, blocks, planes, stride=1):
-        ii_downsample = None
-        layers = []
-        
-        if stride != 1 or self.in_channels != planes*ResBlock.expansion:
-            ii_downsample = nn.Sequential(
-                nn.Conv2d(self.in_channels, planes*ResBlock.expansion, kernel_size=1, stride=stride, bias=False, padding=0),
-                nn.BatchNorm2d(planes*ResBlock.expansion, eps=0.001, momentum=0.99)
-            )
-            
-        layers.append(ResBlock(self.in_channels, planes, i_downsample=ii_downsample, stride=stride))
-        self.in_channels = planes*ResBlock.expansion
-        
-        for i in range(blocks-1):
-            layers.append(ResBlock(self.in_channels, planes))
-            
-        return nn.Sequential(*layers)
-
-class LSTMPyTorch(nn.Module):
-    def __init__(self):
-        super(LSTMPyTorch, self).__init__()
-        
-        self.lstm1 = nn.LSTM(input_size=512, hidden_size=512, batch_first=True, bidirectional=False)
-        self.lstm2 = nn.LSTM(input_size=512, hidden_size=256, batch_first=True, bidirectional=False)
-        self.fc = nn.Linear(256, 7)
-        self.softmax = nn.Softmax(dim=1)
-
-    def forward(self, x):
-        x, _ = self.lstm1(x)
-        x, _ = self.lstm2(x)        
-        x = self.fc(x[:, -1, :])
-        x = self.softmax(x)
-        return x
 
 def ResNet50(num_classes, channels=3):
     return ResNet(Bottleneck, [3,4,6,3], num_classes, channels)
@@ -286,16 +157,15 @@ async def main():
 
     handler = Handler()
 
+    print("Initiating Handler")
     ser_rate_limiter = RateLimiter(interval_seconds=10)
     handler_rate_limiter = RateLimiter(interval_seconds=10)
-
-    
-    mp_face_mesh = mp.solutions.face_mesh
 
     name_backbone_model = 'models/FER_static_ResNet50_AffectNet.pt'
     name_LSTM_model = 'Aff-Wild2'
 
     # Load models
+    print("Loading Models")
     pth_backbone_model = ResNet50(7, channels=3)
     pth_backbone_model.load_state_dict(torch.load(name_backbone_model))
     pth_backbone_model.eval()
@@ -304,10 +174,12 @@ async def main():
     pth_LSTM_model.load_state_dict(torch.load('models/FER_dinamic_LSTM_{0}.pt'.format(name_LSTM_model)))
     pth_LSTM_model.eval()
 
+    print("Models loaded")
     FER_LABELS = ["neutral", "happiness", "sadness", "surprise", "fear", "disgust", "anger"]
     DICT_EMO = {0: FER_LABELS[0], 1: FER_LABELS[1], 2: FER_LABELS[2], 3: FER_LABELS[3], 4: FER_LABELS[4], 5: FER_LABELS[5], 6: FER_LABELS[6]}
 
     async with aiohttp.ClientSession() as session:
+        print("Starting capture")
         cap = cv2.VideoCapture(0)
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -353,8 +225,12 @@ async def main():
 
                         # Get SER prediction with rate limiting
                         ser_prediction, wait_time = await get_ser_prediction(session, ser_rate_limiter)
-                        if ser_prediction:
+                        if ser_prediction == 'DNC':
+                            print('No SER prediction available')
+                            last_ser_prediction = {'prediction': {'name': 'temp'}}
+                        elif ser_prediction:
                             if ser_prediction['prediction'] is not None:
+                                print(ser_prediction['prediction'])
                                 if last_ser_prediction['prediction']['name'] != ser_prediction['prediction']['name']:
                                     last_ser_prediction = ser_prediction
                         print('ser_prediction:', ser_prediction)
@@ -374,11 +250,17 @@ async def main():
                             print('inferred fer:', inferred_fer_label)
                             print('inferred ser:', inferred_ser_label)
                             for emotion in EMOTION_TABLE:
-                                BAYE_EMOTION[emotion] = EMOTION_TABLE[emotion][FER_DICT_EMO[inferred_fer_label]][SER_DICT_EMO[inferred_ser_label]]
-                            
+                                BAYE_EMOTION[emotion] = EMOTION_TABLE[emotion][SER_DICT_EMO[inferred_fer_label]][FER_DICT_EMO[inferred_ser_label]]
+                                
                             print(BAYE_EMOTION)
                             handler = Handler(BAYE_EMOTION)
                             handler.handle_robot_behavior()
+                        elif last_ser_prediction['prediction']['name'] == "temp":
+                            fer_values = output[0]
+                            inferred_fer_label, inferred_fer_prob = FER_LABELS[max(range(len(fer_values)), key=lambda i: fer_values[i])], fer_values[max(range(len(fer_values)), key=lambda i: fer_values[i])]
+                            if inferred_fer_prob > 0.8:
+                                handler = Handler(fer_values)
+                                handler.handle_robot_behavior()
 
                 t2 = time.time()
                 frame = display_FPS(frame, 'FPS: {0:.1f}'.format(1 / (t2 - t1)), box_scale=.5)

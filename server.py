@@ -1,21 +1,18 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from typing import List
 import os
-import asyncio
+from pydub import AudioSegment
 import subprocess
 from vistec_ser.inference.inference import infer_sample, setup_server
 from datetime import datetime
 import threading
-from queue import Queue
 import time
-
-from handler import Handler
+from stack import Stack
 
 # Global objects that will be initialized in lifespan
 recorder = None
 predictor = None
-prediction_queue = Queue()  # Shared queue between recorder and predictor
+prediction_stack = Stack()  # Shared stack between recorder and predictor
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,8 +24,8 @@ async def lifespan(app: FastAPI):
     model, thaiser_module, temp_dir = setup_server(config_path)
     
     # Initialize recorder and predictor
-    recorder = AudioRecorder(temp_dir, prediction_queue)
-    predictor = PredictionWorker(model, thaiser_module, prediction_queue)
+    recorder = AudioRecorder(temp_dir, prediction_stack)
+    predictor = PredictionWorker(model, thaiser_module, prediction_stack, temp_dir)
     
     # Start recording thread
     recording_thread = threading.Thread(target=recorder.start_recording_loop, daemon=True)
@@ -44,88 +41,90 @@ async def lifespan(app: FastAPI):
     recorder.stop()
     predictor.stop()
 
+    _cleanup_old_files(temp_dir)
+
 app = FastAPI(lifespan=lifespan)
 
 class AudioRecorder:
-    def __init__(self, temp_dir, queue):
+    def __init__(self, temp_dir, stack):
         self.temp_dir = temp_dir
         self.current_recording = None
         self.stop_flag = False
-        self.prediction_queue = queue
+        self.prediction_stack = stack
 
     def start_recording_loop(self):
         while not self.stop_flag:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             audio_filename = f"{self.temp_dir}/recorded_audio_{timestamp}.wav"
+            audio_length = 5
             # Start recording
             command = [
                 "ffmpeg",
                 "-y",
                 "-f", "pulse",
                 "-i", "default",
-                "-t", "5",
-                "-ar", "16000",
+                "-t", f"{audio_length}",
+                "-ar", "44100",
                 "-ac", "2",
                 audio_filename
             ]
-            
+
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             time.sleep(5)  # Wait for recording to complete
             process.terminate()
-            
-            # Add to prediction queue
-            self.prediction_queue.put(audio_filename)
-            
-            # Clean up old recordings
-            self._cleanup_old_files()
 
-    def _cleanup_old_files(self):
-        # Keep only the last 5 recordings
-        print("Cleaning up old files")
-        files = sorted([f for f in os.listdir(self.temp_dir) if f.startswith("recorded_audio")])
-        for old_file in files[:-1]:
-            try:
-                os.remove(os.path.join(self.temp_dir, old_file))
-                print("Old files cleaned")
-                print("*–*-*-*-*-*-*-*-*-*-*-*-*")
-            except:
-                pass
+            if os.path.exists(audio_filename):
+                audio = AudioSegment.from_wav(audio_filename)
+                rms = audio.rms
+                rms_threshold = 2000
+                dbfs = audio.dBFS
+                dbfs_threshold = -38
+
+                if rms < rms_threshold or dbfs < dbfs_threshold:
+                    print(f"Skipping quiet file (RMS: {rms} and dBFS: {dbfs}): {audio_filename}. Setting the latest prediction to none.") 
+                    predictor.reset_latest_prediciton()
+
+                else:
+                    print(f"Processing (RMS: {rms} and dBFS: {dbfs}): {audio_filename}")
+                    self.prediction_stack.put(audio_filename)
 
     def stop(self):
         self.stop_flag = True
 
 class PredictionWorker:
-    def __init__(self, model, thaiser_module, queue):
+    def __init__(self, model, thaiser_module, stack, temp_dir):
         self.model = model
         self.thaiser_module = thaiser_module
         self.stop_flag = False
         self.latest_prediction = None
-        self.prediction_queue = queue
+        self.prediction_stack = stack
+        self.temp_dir = temp_dir
 
     def prediction_loop(self):
         while not self.stop_flag:
             try:
-                # Get the next audio file from queue
-                audio_filename = self.prediction_queue.get(timeout=1)
-
+                # Get the next audio file from stack
+                audio_filename = self.prediction_stack.get_latest(timeout=1)
                 # Process the audio file
                 inference_loader = self.thaiser_module.extract_feature([audio_filename])
-                inference_results = [infer_sample(self.model, sample, emotions=self.thaiser_module.emotions)
-                                   for sample in inference_loader]
-                
-                print("Inference Results:", inference_results)
+                inference_results = [infer_sample(self.model, sample, emotions=self.thaiser_module.emotions) for sample in inference_loader]
+                print(inference_results)
                 # Store the latest prediction
                 self.latest_prediction = inference_results[0] if inference_results else None
                 # Clean up the processed file
                 try:
                     print("Removing audio file after processing.")
-                    os.remove(audio_filename)
+                    _cleanup_old_files(self.temp_dir)
                     print("Audio file removed.")
                 except:
                     pass
-                
-            except:
-                print("No audiofile in queue.")
+                    
+            except TimeoutError:  # Specifically catch TimeoutError
+                print("No audiofile in stack.")
+                print("*–*-*-*-*-*-*-*-*-*-*-*-*")
+                time.sleep(1)  # Add a small sleep to prevent CPU spinning
+            except Exception as e:  # Catch any other exceptions
+                print(f"Error processing audio: {e}")
                 print("*–*-*-*-*-*-*-*-*-*-*-*-*")
                 pass
 
@@ -134,6 +133,19 @@ class PredictionWorker:
 
     def get_latest_prediction(self):
         return self.latest_prediction
+
+    def reset_latest_prediciton(self):
+        self.latest_prediction = "DNC"
+
+def _cleanup_old_files(temp_dir):
+    files = sorted([f for f in os.listdir(temp_dir) if f.startswith("recorded_audio")])
+    for old_file in files:
+        try:
+            os.remove(os.path.join(temp_dir, old_file))
+            print("Old files cleaned")
+            print("*–*-*-*-*-*-*-*-*-*-*-*-*")
+        except:
+            pass
 
 @app.get("/healthcheck")
 async def healthcheck():
