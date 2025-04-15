@@ -8,6 +8,7 @@ from datetime import datetime
 import threading
 import time
 from stack import Stack
+import os
 
 # Global objects that will be initialized in lifespan
 recorder = None
@@ -20,7 +21,7 @@ async def lifespan(app: FastAPI):
     global recorder, predictor
     
     # Setup server components
-    config_path = "config.yaml"
+    config_path = os.path.dirname(os.path.abspath(__file__)) + "/config.yaml"
     model, thaiser_module, temp_dir = setup_server(config_path)
     
     # Initialize recorder and predictor
@@ -76,7 +77,7 @@ class AudioRecorder:
             if os.path.exists(audio_filename):
                 audio = AudioSegment.from_wav(audio_filename)
                 rms = audio.rms
-                rms_threshold = 2000
+                rms_threshold = 200
                 dbfs = audio.dBFS
                 dbfs_threshold = -38
 

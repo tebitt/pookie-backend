@@ -28,10 +28,11 @@ class RoboEyes:
         cv2.namedWindow(self.window_name, cv2.WND_PROP_FULLSCREEN)
         cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
-    def load_gifs(self):    
-        for filename in os.listdir('assets'):
+    def load_gifs(self):
+        ASSETS_PATH = os.path.dirname(os.path.abspath(__file__)) + '/assets'
+        for filename in os.listdir(ASSETS_PATH):
             if filename.endswith('.gif'):
-                file_path = os.path.join('assets', filename)
+                file_path = os.path.join(ASSETS_PATH, filename)
                 gif = Image.open(file_path)
                 frames = [frame.copy() for frame in ImageSequence.Iterator(gif)]
                 self.gif_frames[filename[:-4]] = frames 
@@ -88,8 +89,8 @@ class RoboEyes:
                         self.animate_mood(new_mood, delay)  # Play the new mood immediately
                         return  # Exit the current animation loop
                 cv2.waitKey(delay)
-        else:
-            print(f"No GIF available for mood {mood}")
+        # else:
+        #     print(f"No GIF available for mood {mood}")
 
     def read_current_mood(self):
         return self.current_mood

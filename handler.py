@@ -27,6 +27,8 @@ class Handler:
         self.sadness = 0.0
         self.surprise = 0.0
 
+        print(baye_result)
+
         if baye_result is not None:
             self.set_emotions(baye_result)
 
@@ -54,7 +56,7 @@ class Handler:
                 elif self.happiness >= self.disgust + self.sadness + self.anger + self.fear: 'pookie_slightly_happy'
                 else: return 'pookie_playful_1'
                 
-            case 'happy':
+            case 'happiness':
                 if self.happiness >= 0.5: return random.choice(['pookie_slightly_happy', 'pookie_very_happy'])
                 else: return random.choice(['pookie_playful_2', 'pookie_playful_3'])
 
@@ -212,14 +214,15 @@ class Handler:
 
     async def move_eyes(self, expression):
         EYES_SERVER_URL = f"http://127.0.0.1:8081/set_status?mood={expression}"
-        try:
-             async with aiohttp.ClientSession() as session:
-                    async with session.get(EYES_SERVER_URL) as response:
-                        if response.status == 200:
-                            print("Eyes moved successfully")
-                        else:
-                            print(f"Failed to move eyes. Status code: {response.status}")
-        except Exception as e:
-            print(f"Error sending request: {e}")
-            return None, None
+        if expression is not None:
+            try:
+                async with aiohttp.ClientSession() as session:
+                        async with session.get(EYES_SERVER_URL) as response:
+                            if response.status == 200:
+                                print("Eyes moved successfully")
+                            else:
+                                print(f"Failed to move eyes. Status code: {response.status}")
+            except Exception as e:
+                print(f"Error sending request: {e}")
+                return None, None
 

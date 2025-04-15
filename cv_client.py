@@ -161,7 +161,7 @@ async def main():
     ser_rate_limiter = RateLimiter(interval_seconds=10)
     handler_rate_limiter = RateLimiter(interval_seconds=10)
 
-    name_backbone_model = 'models/FER_static_ResNet50_AffectNet.pt'
+    name_backbone_model = os.path.dirname(os.path.abspath(__file__)) + '/models/FER_static_ResNet50_AffectNet.pt'
     name_LSTM_model = 'Aff-Wild2'
 
     # Load models
@@ -171,7 +171,7 @@ async def main():
     pth_backbone_model.eval()
 
     pth_LSTM_model = LSTMPyTorch()
-    pth_LSTM_model.load_state_dict(torch.load('models/FER_dinamic_LSTM_{0}.pt'.format(name_LSTM_model)))
+    pth_LSTM_model.load_state_dict(torch.load(os.path.dirname(os.path.abspath(__file__)) + '/models/FER_dinamic_LSTM_{0}.pt'.format(name_LSTM_model)))
     pth_LSTM_model.eval()
 
     print("Models loaded")
@@ -225,13 +225,12 @@ async def main():
 
                         # Get SER prediction with rate limiting
                         ser_prediction, wait_time = await get_ser_prediction(session, ser_rate_limiter)
-                        if ser_prediction == 'DNC':
-                            print('No SER prediction available')
-                            last_ser_prediction = {'prediction': {'name': 'temp'}}
-                        elif ser_prediction:
+                        if ser_prediction:
                             if ser_prediction['prediction'] is not None:
-                                print(ser_prediction['prediction'])
-                                if last_ser_prediction['prediction']['name'] != ser_prediction['prediction']['name']:
+                                if ser_prediction['prediction'] == 'DNC':
+                                    print('No SER prediction available')
+                                    last_ser_prediction = {'prediction': {'name': 'temp'}}
+                                elif last_ser_prediction['prediction']['name'] != ser_prediction['prediction']['name']:
                                     last_ser_prediction = ser_prediction
                         print('ser_prediction:', ser_prediction)
                     
@@ -250,7 +249,7 @@ async def main():
                             print('inferred fer:', inferred_fer_label)
                             print('inferred ser:', inferred_ser_label)
                             for emotion in EMOTION_TABLE:
-                                BAYE_EMOTION[emotion] = EMOTION_TABLE[emotion][SER_DICT_EMO[inferred_fer_label]][FER_DICT_EMO[inferred_ser_label]]
+                                BAYE_EMOTION[emotion] = EMOTION_TABLE[emotion][SER_DICT_EMO[inferred_ser_label]][FER_DICT_EMO[inferred_fer_label]]
                                 
                             print(BAYE_EMOTION)
                             handler = Handler(BAYE_EMOTION)
@@ -258,8 +257,8 @@ async def main():
                         elif last_ser_prediction['prediction']['name'] == "temp":
                             fer_values = output[0]
                             inferred_fer_label, inferred_fer_prob = FER_LABELS[max(range(len(fer_values)), key=lambda i: fer_values[i])], fer_values[max(range(len(fer_values)), key=lambda i: fer_values[i])]
-                            if inferred_fer_prob > 0.8:
-                                handler = Handler(fer_values)
+                            if inferred_fer_prob > 0.6:
+                                handler = Handler({"neutral":fer_values[0], "happiness":fer_values[1], "sadness": fer_values[2], "surprise": fer_values[3], "fear": fer_values[4], "disgust": fer_values[5], "anger": fer_values[6]})
                                 handler.handle_robot_behavior()
 
                 t2 = time.time()
