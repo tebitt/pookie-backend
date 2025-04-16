@@ -112,8 +112,7 @@ class Handler:
             await asyncio.gather(
                 self.move(decided_emotion),
             )
-
-        self.speak(decided_emotion)
+        
         asyncio.ensure_future(execute_actions())
 
     def speak(self, emotion):
@@ -220,6 +219,7 @@ class Handler:
                         async with session.get(EYES_SERVER_URL) as response:
                             if response.status == 200:
                                 print("Eyes moved successfully")
+                                self.speak(expression)
                             else:
                                 print(f"Failed to move eyes. Status code: {response.status}")
             except Exception as e:

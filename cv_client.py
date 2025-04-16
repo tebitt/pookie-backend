@@ -18,6 +18,20 @@ from rate_limiter import RateLimiter
 import os, glob
 
 from cv_models import Bottleneck, ResNet, LSTMPyTorch
+from dotenv import load_dotenv
+import pvporcupine
+import pyaudio
+import struct 
+
+load_dotenv(dotenv_path=os.path.dirname(os.path.abspath(__file__)) + '/.env')
+
+ACCESS_KEY = os.getenv("ACCESS_KEY")
+KEYWORD_FILE_PATH = os.path.dirname(os.path.abspath(__file__)) + '/models/hello-poo-kie_en_raspberry-pi_v3_0_0.ppn'
+FRAME_LENGTH = 512
+CHANNELS = 1
+SAMPLE_RATE = 16000
+FORMAT = pyaudio.paInt16
+
 
 FER_DICT_EMO = {"neutral": 0, "anger": 1, "happiness": 2, "sadness": 3, "disgust": 4, "fear": 5, "surprise": 6}
 SER_DICT_EMO = {"neutral": 0, "anger": 1, "happiness": 2, "sadness": 3, "frustration": 4}
@@ -156,8 +170,8 @@ async def main():
     await asyncio.sleep(1)
 
     handler = Handler()
-
     print("Initiating Handler")
+
     ser_rate_limiter = RateLimiter(interval_seconds=10)
     handler_rate_limiter = RateLimiter(interval_seconds=10)
 
@@ -177,7 +191,24 @@ async def main():
     print("Models loaded")
     FER_LABELS = ["neutral", "happiness", "sadness", "surprise", "fear", "disgust", "anger"]
     DICT_EMO = {0: FER_LABELS[0], 1: FER_LABELS[1], 2: FER_LABELS[2], 3: FER_LABELS[3], 4: FER_LABELS[4], 5: FER_LABELS[5], 6: FER_LABELS[6]}
+        # Create a Porcupine instance with a custom keyword file
+    porcupine = pvporcupine.create(
+        access_key=ACCESS_KEY,
+        keyword_paths=[KEYWORD_FILE_PATH]
+    )
 
+    # Initialize PyAudio
+    audio = pyaudio.PyAudio()
+
+    # Open an audio input stream
+    stream = audio.open(
+        rate=SAMPLE_RATE,
+        channels=CHANNELS,
+        format=FORMAT,
+        input=True,
+        frames_per_buffer=FRAME_LENGTH
+    )
+    
     async with aiohttp.ClientSession() as session:
         print("Starting capture")
         cap = cv2.VideoCapture(0)
@@ -202,6 +233,7 @@ async def main():
 
                 if results.multi_face_landmarks:
                     for fl in results.multi_face_landmarks:
+                        handler_limit_bool = await handler_rate_limiter.acquire() 
                         startX, startY, endX, endY = get_box(fl, w, h)
                         cur_face = frame_copy[startY:endY, startX:endX]
 
@@ -240,26 +272,26 @@ async def main():
                         if wait_time is not None and wait_time > 0:
                             wait_text = f"Next prediction in: {wait_time:.1f}s"
                             cv2.putText(frame, wait_text, (10, y_position), cv2.FONT_HERSHEY_SIMPLEX,
-                                      1, (255, 165, 0), 2, cv2.LINE_AA)
+                                    1, (255, 165, 0), 2, cv2.LINE_AA)
                         
-                        if last_ser_prediction['prediction']['name'] != "temp" and await handler_rate_limiter.acquire():
+                        if last_ser_prediction['prediction']['name'] != "temp" and handler_limit_bool:
                             fer_values = output[0]
                             inferred_fer_label = FER_LABELS[max(range(len(fer_values)), key=lambda i: fer_values[i])]
                             inferred_ser_label = max(last_ser_prediction['prediction']['prob'], key=lambda k: float(last_ser_prediction['prediction']['prob'][k]))
-                            print('inferred fer:', inferred_fer_label)
-                            print('inferred ser:', inferred_ser_label)
                             for emotion in EMOTION_TABLE:
                                 BAYE_EMOTION[emotion] = EMOTION_TABLE[emotion][SER_DICT_EMO[inferred_ser_label]][FER_DICT_EMO[inferred_fer_label]]
                                 
                             print(BAYE_EMOTION)
                             handler = Handler(BAYE_EMOTION)
                             handler.handle_robot_behavior()
-                        elif last_ser_prediction['prediction']['name'] == "temp":
+                            handler_limit_bool = False
+                        elif last_ser_prediction['prediction']['name'] == "temp" and handler_limit_bool:
                             fer_values = output[0]
                             inferred_fer_label, inferred_fer_prob = FER_LABELS[max(range(len(fer_values)), key=lambda i: fer_values[i])], fer_values[max(range(len(fer_values)), key=lambda i: fer_values[i])]
                             if inferred_fer_prob > 0.6:
                                 handler = Handler({"neutral":fer_values[0], "happiness":fer_values[1], "sadness": fer_values[2], "surprise": fer_values[3], "fear": fer_values[4], "disgust": fer_values[5], "anger": fer_values[6]})
                                 handler.handle_robot_behavior()
+                                handler_limit_bool = False
 
                 t2 = time.time()
                 frame = display_FPS(frame, 'FPS: {0:.1f}'.format(1 / (t2 - t1)), box_scale=.5)
