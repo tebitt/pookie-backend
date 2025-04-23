@@ -22,6 +22,9 @@ import pvporcupine
 import pyaudio
 import struct 
 
+# Configuration flag for displaying the camera feed
+DISPLAY_CAMERA_FEED = True  # Set to False to disable the camera feed display
+
 load_dotenv(dotenv_path=os.path.dirname(os.path.abspath(__file__)) + '/.env')
 
 ACCESS_KEY = os.getenv("ACCESS_KEY")
@@ -229,8 +232,8 @@ async def main():
                 time_since_last_call = current_time - last_handler_call_time
                 cooldown_remaining = max(0, handler_cooldown - time_since_last_call)
                 
-                # Display cooldown timer if active
-                if cooldown_remaining > 0:
+                # Add cooldown text to frame if we're displaying it
+                if DISPLAY_CAMERA_FEED and cooldown_remaining > 0:
                     cooldown_text = f"Handler cooldown: {cooldown_remaining:.1f}s"
                     cv2.putText(frame, cooldown_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX,
                             1, (0, 0, 255), 2, cv2.LINE_AA)
@@ -254,9 +257,12 @@ async def main():
 
                         cl = np.argmax(output)
                         label = DICT_EMO[cl]
-                        frame = display_EMO_PRED(frame, (startX, startY, endX, endY), 
-                                               label + ' {0:.1%}'.format(output[0][cl]), 
-                                               line_width=3)
+                        
+                        # Only apply visual elements if displaying the camera feed
+                        if DISPLAY_CAMERA_FEED:
+                            frame = display_EMO_PRED(frame, (startX, startY, endX, endY), 
+                                                  label + ' {0:.1%}'.format(output[0][cl]), 
+                                                  line_width=3)
 
                         ser_prediction, wait_time = await get_ser_prediction(session)
                         if ser_prediction:
@@ -268,9 +274,9 @@ async def main():
                                     last_ser_prediction = ser_prediction
                         print('ser_prediction:', ser_prediction)
                     
-                        # Display the last known SER prediction and waiting time
-                        y_position = 30  # Starting y position for text
-                        if wait_time is not None and wait_time > 0:
+                        # Display the last known SER prediction and waiting time if showing camera feed
+                        if DISPLAY_CAMERA_FEED and wait_time is not None and wait_time > 0:
+                            y_position = 30  # Starting y position for text
                             wait_text = f"Next prediction in: {wait_time:.1f}s"
                             cv2.putText(frame, wait_text, (10, y_position), cv2.FONT_HERSHEY_SIMPLEX,
                                     1, (255, 165, 0), 2, cv2.LINE_AA)
@@ -303,9 +309,14 @@ async def main():
                                 last_handler_call_time = current_time
 
                 t2 = time.time()
-                frame = display_FPS(frame, 'FPS: {0:.1f}'.format(1 / (t2 - t1)), box_scale=.5)
-
-                cv2.imshow('Webcam', frame)
+                
+                # Only apply FPS display if showing camera feed
+                if DISPLAY_CAMERA_FEED:
+                    frame = display_FPS(frame, 'FPS: {0:.1f}'.format(1 / (t2 - t1)), box_scale=.5)
+                    # Display the frame
+                    cv2.imshow('Webcam', frame)
+                
+                # Always check for exit key
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
 
