@@ -161,6 +161,54 @@ async def get_ser_prediction(session):
             return prediction_result, None
         return None, None
 
+async def process_wake_word(porcupine, stream, handler):
+    """
+    Listen for the wake word and activate the handler when detected
+    """
+    print("Listening for wake word 'hello-poo-kie'...")
+    
+    if DISPLAY_CAMERA_FEED:
+        # Create a small window showing that wake word detection is active
+        wake_window = np.zeros((200, 400, 3), dtype=np.uint8)
+        cv2.putText(wake_window, "Listening for wake word", (50, 80), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.putText(wake_window, "'hello-poo-kie'", (120, 120), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.imshow("Wake Word Detection", wake_window)
+        cv2.waitKey(1)
+
+    # Listen for wake word
+    while True:
+        # Read audio frame
+        pcm = stream.read(FRAME_LENGTH, exception_on_overflow=False)
+        pcm = struct.unpack_from("h" * FRAME_LENGTH, pcm)
+        
+        # Process with Porcupine
+        keyword_index = porcupine.process(pcm)
+        
+        # Check if wake word detected
+        if keyword_index >= 0:
+            print("Wake word detected!")
+            if DISPLAY_CAMERA_FEED:
+                # Update window to show wake word was detected
+                wake_window = np.zeros((200, 400, 3), dtype=np.uint8)
+                cv2.putText(wake_window, "Wake word detected!", (80, 100), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                cv2.imshow("Wake Word Detection", wake_window)
+                cv2.waitKey(500)  # Show for half a second
+                cv2.destroyWindow("Wake Word Detection")
+            
+            # Activate handler
+            handler.handle_robot_behavior()
+            return True
+        
+        # Check for quit key
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            return False
+        
+        # Small delay to not hog the CPU
+        await asyncio.sleep(0.01)
+
 async def main():
     await asyncio.sleep(1)
 
@@ -183,7 +231,8 @@ async def main():
     print("Models loaded")
     FER_LABELS = ["neutral", "happiness", "sadness", "surprise", "fear", "disgust", "anger"]
     DICT_EMO = {0: FER_LABELS[0], 1: FER_LABELS[1], 2: FER_LABELS[2], 3: FER_LABELS[3], 4: FER_LABELS[4], 5: FER_LABELS[5], 6: FER_LABELS[6]}
-        # Create a Porcupine instance with a custom keyword file
+        
+    # Create a Porcupine instance with a custom keyword file
     porcupine = pvporcupine.create(
         access_key=ACCESS_KEY,
         keyword_paths=[KEYWORD_FILE_PATH]
@@ -204,6 +253,7 @@ async def main():
     # Initialize handler cooldown variables - use the original value from the code
     last_handler_call_time = 0
     handler_cooldown = 5.0  # Original 5 second cooldown time
+    wake_word_timeout = 60.0  # One minute timeout before wake word detection activates
     
     async with aiohttp.ClientSession() as session:
         print("Starting capture")
@@ -232,11 +282,33 @@ async def main():
                 time_since_last_call = current_time - last_handler_call_time
                 cooldown_remaining = max(0, handler_cooldown - time_since_last_call)
                 
+                # Check if we've reached the wake word timeout (1 minute)
+                if time_since_last_call >= wake_word_timeout:
+                    print(f"No handler activation for {wake_word_timeout} seconds, activating wake word detection")
+                    
+                    # Temporarily pause camera feed processing for wake word detection
+                    if cap.isOpened():
+                        # Don't release the camera, just stop processing frames temporarily
+                        wake_word_detected = await process_wake_word(porcupine, stream, handler)
+                        
+                        if wake_word_detected:
+                            # Update the last handler call time
+                            last_handler_call_time = time.time()
+                        else:
+                            # User pressed quit during wake word detection
+                            break
+                
                 # Add cooldown text to frame if we're displaying it
-                if DISPLAY_CAMERA_FEED and cooldown_remaining > 0:
+                if DISPLAY_CAMERA_FEED:
                     cooldown_text = f"Handler cooldown: {cooldown_remaining:.1f}s"
                     cv2.putText(frame, cooldown_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX,
                             1, (0, 0, 255), 2, cv2.LINE_AA)
+                    
+                    # Add time until wake word activation
+                    if time_since_last_call < wake_word_timeout:
+                        wake_word_text = f"Wake word in: {wake_word_timeout - time_since_last_call:.1f}s"
+                        cv2.putText(frame, wake_word_text, (10, 90), cv2.FONT_HERSHEY_SIMPLEX,
+                                1, (0, 255, 0), 2, cv2.LINE_AA)
 
                 if results.multi_face_landmarks:
                     for fl in results.multi_face_landmarks:
@@ -322,8 +394,13 @@ async def main():
 
                 await asyncio.sleep(0.01)
 
+        # Clean up resources
         cap.release()
         cv2.destroyAllWindows()
+        stream.stop_stream()
+        stream.close()
+        audio.terminate()
+        porcupine.delete()
 
 if __name__ == "__main__":
     asyncio.run(main())
