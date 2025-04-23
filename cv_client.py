@@ -14,7 +14,6 @@ import torch.nn.functional
 from PIL import Image
 from torchvision import transforms
 from handler import Handler
-from rate_limiter import RateLimiter
 import os, glob
 
 from cv_models import Bottleneck, ResNet, LSTMPyTorch
@@ -152,18 +151,11 @@ def display_FPS(img, text, margin=1.0, box_scale=1.0):
                 bottomLeftOrigin=False)
     return img
 
-async def get_ser_prediction(session, rate_limiter):
-    try:
-        # Try to acquire permission to make a request
-        if await rate_limiter.acquire():
-            async with session.get(f"{SER_SERVER_URL}/get_latest_prediction") as response:
-                if response.status == 200:
-                    prediction_result = await response.json()
-                    return prediction_result, None
-        # Return remaining time until next request
-        return None, rate_limiter.time_until_next_request()
-    except Exception as e:
-        print(f"Error getting SER prediction: {str(e)}")
+async def get_ser_prediction(session):
+    async with session.get(f"{SER_SERVER_URL}/get_latest_prediction") as response:
+        if response.status == 200:
+            prediction_result = await response.json()
+            return prediction_result, None
         return None, None
 
 async def main():
@@ -171,9 +163,6 @@ async def main():
 
     handler = Handler()
     print("Initiating Handler")
-
-    ser_rate_limiter = RateLimiter(interval_seconds=10)
-    handler_rate_limiter = RateLimiter(interval_seconds=10)
 
     name_backbone_model = os.path.dirname(os.path.abspath(__file__)) + '/models/FER_static_ResNet50_AffectNet.pt'
     name_LSTM_model = 'Aff-Wild2'
@@ -209,6 +198,10 @@ async def main():
         frames_per_buffer=FRAME_LENGTH
     )
     
+    # Initialize handler cooldown variables
+    last_handler_call_time = 0
+    handler_cooldown = 5.0  # Cooldown time in seconds
+    
     async with aiohttp.ClientSession() as session:
         print("Starting capture")
         cap = cv2.VideoCapture(0)
@@ -231,9 +224,19 @@ async def main():
                 results = face_mesh.process(frame_copy)
                 frame_copy.flags.writeable = True
 
+                # Calculate time since last handler call
+                current_time = time.time()
+                time_since_last_call = current_time - last_handler_call_time
+                cooldown_remaining = max(0, handler_cooldown - time_since_last_call)
+                
+                # Display cooldown timer if active
+                if cooldown_remaining > 0:
+                    cooldown_text = f"Handler cooldown: {cooldown_remaining:.1f}s"
+                    cv2.putText(frame, cooldown_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX,
+                            1, (0, 0, 255), 2, cv2.LINE_AA)
+
                 if results.multi_face_landmarks:
                     for fl in results.multi_face_landmarks:
-                        handler_limit_bool = await handler_rate_limiter.acquire() 
                         startX, startY, endX, endY = get_box(fl, w, h)
                         cur_face = frame_copy[startY:endY, startX:endX]
 
@@ -255,8 +258,7 @@ async def main():
                                                label + ' {0:.1%}'.format(output[0][cl]), 
                                                line_width=3)
 
-                        # Get SER prediction with rate limiting
-                        ser_prediction, wait_time = await get_ser_prediction(session, ser_rate_limiter)
+                        ser_prediction, wait_time = await get_ser_prediction(session)
                         if ser_prediction:
                             if ser_prediction['prediction'] is not None:
                                 if ser_prediction['prediction'] == 'DNC':
@@ -268,30 +270,37 @@ async def main():
                     
                         # Display the last known SER prediction and waiting time
                         y_position = 30  # Starting y position for text
-                        # Display waiting time if rate limited
                         if wait_time is not None and wait_time > 0:
                             wait_text = f"Next prediction in: {wait_time:.1f}s"
                             cv2.putText(frame, wait_text, (10, y_position), cv2.FONT_HERSHEY_SIMPLEX,
                                     1, (255, 165, 0), 2, cv2.LINE_AA)
                         
-                        if last_ser_prediction['prediction']['name'] != "temp" and handler_limit_bool:
-                            fer_values = output[0]
-                            inferred_fer_label = FER_LABELS[max(range(len(fer_values)), key=lambda i: fer_values[i])]
-                            inferred_ser_label = max(last_ser_prediction['prediction']['prob'], key=lambda k: float(last_ser_prediction['prediction']['prob'][k]))
-                            for emotion in EMOTION_TABLE:
-                                BAYE_EMOTION[emotion] = EMOTION_TABLE[emotion][SER_DICT_EMO[inferred_ser_label]][FER_DICT_EMO[inferred_fer_label]]
+                        # Only call handler if cooldown has expired
+                        if time_since_last_call >= handler_cooldown:
+                            should_call_handler = False
+                            
+                            if last_ser_prediction['prediction']['name'] != "temp":
+                                fer_values = output[0]
+                                inferred_fer_label = FER_LABELS[max(range(len(fer_values)), key=lambda i: fer_values[i])]
+                                inferred_ser_label = max(last_ser_prediction['prediction']['prob'], key=lambda k: float(last_ser_prediction['prediction']['prob'][k]))
+                                for emotion in EMOTION_TABLE:
+                                    BAYE_EMOTION[emotion] = EMOTION_TABLE[emotion][SER_DICT_EMO[inferred_ser_label]][FER_DICT_EMO[inferred_fer_label]]
                                 
-                            print(BAYE_EMOTION)
-                            handler = Handler(BAYE_EMOTION)
-                            handler.handle_robot_behavior()
-                            handler_limit_bool = False
-                        elif last_ser_prediction['prediction']['name'] == "temp" and handler_limit_bool:
-                            fer_values = output[0]
-                            inferred_fer_label, inferred_fer_prob = FER_LABELS[max(range(len(fer_values)), key=lambda i: fer_values[i])], fer_values[max(range(len(fer_values)), key=lambda i: fer_values[i])]
-                            if inferred_fer_prob > 0.6:
-                                handler = Handler({"neutral":fer_values[0], "happiness":fer_values[1], "sadness": fer_values[2], "surprise": fer_values[3], "fear": fer_values[4], "disgust": fer_values[5], "anger": fer_values[6]})
+                                print(BAYE_EMOTION)
+                                handler = Handler(BAYE_EMOTION)
+                                should_call_handler = True
+                            elif last_ser_prediction['prediction']['name'] == "temp":
+                                fer_values = output[0]
+                                inferred_fer_label, inferred_fer_prob = FER_LABELS[max(range(len(fer_values)), key=lambda i: fer_values[i])], fer_values[max(range(len(fer_values)), key=lambda i: fer_values[i])]
+                                if inferred_fer_prob > 0.6:
+                                    handler = Handler({"neutral":fer_values[0], "happiness":fer_values[1], "sadness": fer_values[2], "surprise": fer_values[3], "fear": fer_values[4], "disgust": fer_values[5], "anger": fer_values[6]})
+                                    should_call_handler = True
+                            
+                            # Call handler and update last call time if needed
+                            if should_call_handler:
+                                print(f"Calling handler at {current_time}")
                                 handler.handle_robot_behavior()
-                                handler_limit_bool = False
+                                last_handler_call_time = current_time
 
                 t2 = time.time()
                 frame = display_FPS(frame, 'FPS: {0:.1f}'.format(1 / (t2 - t1)), box_scale=.5)
