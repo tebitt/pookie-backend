@@ -201,9 +201,9 @@ async def main():
         frames_per_buffer=FRAME_LENGTH
     )
     
-    # Initialize handler cooldown variables
+    # Initialize handler cooldown variables - use the original value from the code
     last_handler_call_time = 0
-    handler_cooldown = 5.0  # Cooldown time in seconds
+    handler_cooldown = 5.0  # Original 5 second cooldown time
     
     async with aiohttp.ClientSession() as session:
         print("Starting capture")
